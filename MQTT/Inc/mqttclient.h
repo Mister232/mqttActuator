@@ -29,5 +29,8 @@
 extern uint8_t mqtt_ConnectServer(void);
 extern uint8_t mqtt_PacketBuf[MQTT_PacketBuffSize];
 extern void mqtt_TransmitPublish(char *topic, char *buf);
+extern int mqtt_checkAndReceivePublish(unsigned char *outBuf);
+extern void mqtt_SubscribeTopic(char *topicName);
+extern int mqtt_send_ping(uint32_t waitms);
 
 #endif

@@ -46,11 +46,17 @@ uint8_t toggleLED;
 // Callback: timer has rolled over
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-  // Check which version of the timer triggered this callback and toggle LED
-  if (htim == &htim3)
-  {
-    HAL_GPIO_TogglePin(LED_GPIO_Port, LED_Pin);
-  }
+	int rc;
+
+	// Check which version of the timer triggered this callback and toggle LED
+	if (htim == &htim3)
+	{
+		// Try to ping to mqtt broker
+		while(rc != 1)
+		{
+			rc = mqtt_send_ping(ESP8266_MAX_TIMEOUT);
+		}
+	}
 }
 
 
@@ -61,7 +67,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 int main(void)
 {
 	// Local variables
-	uint8_t conOK, retry_count;
+	uint8_t conOK, retry_count, i;
+	char outMsg[100];
+	unsigned char buf[200];
+	int rc;
 
 	/* MCU Configuration--------------------------------------------------------*/
 
@@ -134,12 +143,45 @@ int main(void)
 	}
 
 	// Subscribe for a topic
+	pc_printf("Subscribing for new topic\r\n");
+	mqtt_SubscribeTopic(MQTT_SUBSCRIBE_FOR);
 
-	// Start timer
+	// Start timer for ping
 	HAL_TIM_Base_Start_IT(&htim3);
+
 
 	while (1)
 	{
+		// Check for new publish from broker
+		rc = mqtt_checkAndReceivePublish(buf);
+
+		// If return code is 1 new message can be printed
+		if(rc)
+		{
+			// Start timer for ping
+			HAL_TIM_Base_Stop_IT(&htim3);
+
+			sprintf(outMsg, "Message received: %s\n\r", buf);
+			pc_printf(outMsg);
+
+			if(buf == "LED_ON")
+			{
+				LED_On();
+			}
+			else if(buf == "LED_OFF")
+			{
+				LED_Off();
+			}
+
+			// Reset buffer
+			for(i = 0; i < sizeof(buf); i++)
+			{
+				buf[i] = 0;
+			}
+
+			// Start timer for ping
+			HAL_TIM_Base_Start_IT(&htim3);
+		}
 	}
 }
 
@@ -221,9 +263,9 @@ static void MX_TIM3_Init(void)
 	TIM_MasterConfigTypeDef sMasterConfig = {0};
 
 	htim3.Instance = TIM3;
-	htim3.Init.Prescaler = 8000;
+	htim3.Init.Prescaler = 48000;
 	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim3.Init.Period = 10000;
+	htim3.Init.Period = 30000;
 	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 	if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
