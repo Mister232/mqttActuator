@@ -60,6 +60,7 @@ extern void toggle_LED(uint8_t toggleCNT, int timeout);
 extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 extern uint8_t toggleLED;
+extern char outBuf[500];
 
 
 #endif /* __MAIN_H */

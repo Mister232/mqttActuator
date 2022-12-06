@@ -20,6 +20,7 @@
 #include "main.h"
 #include "uart_com.h"
 #include "esp8266.h"
+#include <mqttclient.h>
 
 
 // Private variables
@@ -41,21 +42,27 @@ void toggle_LED(uint8_t toggleCNT, int timeout);
 
 // Globals
 uint8_t toggleLED;
+char outBuf[500];
+uint8_t firstIR;
 
 
 // Callback: timer has rolled over
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	int rc;
-
-	// Check which version of the timer triggered this callback and toggle LED
-	if (htim == &htim3)
+	// Jump over ping if its first time, because it triggers just after enabling timer IT
+	if(!firstIR)
 	{
-		// Try to ping to mqtt broker
-		while(rc != 1)
+		// Check which version of the timer triggered this callback and toggle LED
+		if (htim == &htim3)
 		{
-			rc = mqtt_send_ping(ESP8266_MAX_TIMEOUT);
+			// Send ping to broker
+			mqtt_send_ping(ESP8266_MAX_TIMEOUT);
+
 		}
+	}
+	else
+	{
+		firstIR = 0;
 	}
 }
 
@@ -67,10 +74,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 int main(void)
 {
 	// Local variables
-	uint8_t conOK, retry_count, i;
-	char outMsg[100];
-	unsigned char buf[200];
-	int rc;
+	uint8_t conOK, retry_count;
+	int rc, i;
 
 	/* MCU Configuration--------------------------------------------------------*/
 
@@ -95,6 +100,7 @@ int main(void)
 	conOK = 0;
 	retry_count = 0;
 	toggleLED = 0;
+	rc = 0;
 
 	// Try to set up TCP connection
 	do
@@ -147,37 +153,41 @@ int main(void)
 	mqtt_SubscribeTopic(MQTT_SUBSCRIBE_FOR);
 
 	// Start timer for ping
+	firstIR = 1;
 	HAL_TIM_Base_Start_IT(&htim3);
 
 
 	while (1)
 	{
 		// Check for new publish from broker
-		rc = mqtt_checkAndReceivePublish(buf);
+		rc = mqtt_checkAndReceivePublish();
 
 		// If return code is 1 new message can be printed
 		if(rc)
 		{
-			// Start timer for ping
+			// Stop and reset ping timer
 			HAL_TIM_Base_Stop_IT(&htim3);
+			__HAL_TIM_SetCounter(&htim3,0);
 
-			sprintf(outMsg, "Message received: %s\n\r", buf);
-			pc_printf(outMsg);
+			pc_printf(outBuf);
+			pc_printf("\n\r");
 
-			if(buf == "LED_ON")
+			if(strstr(outBuf,"LED_ON"))
 			{
 				LED_On();
 			}
-			else if(buf == "LED_OFF")
+			else if(strstr(outBuf,"LED_OFF"))
 			{
 				LED_Off();
 			}
 
-			// Reset buffer
-			for(i = 0; i < sizeof(buf); i++)
+			// Clear buffer
+			for(i = 0; i < 500; i++)
 			{
-				buf[i] = 0;
+				outBuf[i] = 0;
 			}
+
+			rc = 0;
 
 			// Start timer for ping
 			HAL_TIM_Base_Start_IT(&htim3);
@@ -265,7 +275,7 @@ static void MX_TIM3_Init(void)
 	htim3.Instance = TIM3;
 	htim3.Init.Prescaler = 48000;
 	htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-	htim3.Init.Period = 30000;
+	htim3.Init.Period = 20000;
 	htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
 	htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
 	if (HAL_TIM_Base_Init(&htim3) != HAL_OK)

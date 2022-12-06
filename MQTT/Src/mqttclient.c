@@ -141,37 +141,45 @@ void mqtt_TransmitPublish(char *topic, char *buf)
 
 /**
   * @brief  Function to check for a new publish from broker
-  * @param buf: Buffer which contains the received data if something is available
   * @retval 0 if no message was received, otherwise 1
   */
-int mqtt_checkAndReceivePublish(unsigned char *outBuf)
+int mqtt_checkAndReceivePublish(void)
 {
-	unsigned char buf[200];
-	int buflen = sizeof(buf);
-	int rc, qos, payloadlen_in;
+	unsigned char buf[500];
+	unsigned char* recBuf;
+	int buflen;
+	int rc, qos, payloadlen_in, i;
 	unsigned char dup, retained;
 	unsigned short msgid;
 	MQTTString receivedTopic;
 
 	// Init variables
 	rc = 0;
-	buflen = 0;
+	packagePos = 0;
+	buflen = sizeof(buf);
 
 	// Read package and check if its a publish
 	if (MQTTPacket_read(buf, buflen, mqtt_transport_publishGetData) == PUBLISH)
 	{
-		rc = MQTTDeserialize_publish(&dup, &qos, &retained, &msgid, &receivedTopic, &outBuf, &payloadlen_in, buf, buflen);
+		rc = MQTTDeserialize_publish(&dup, &qos, &retained, &msgid, &receivedTopic, &recBuf, &payloadlen_in, buf, buflen);
+
 
 		if(rc)
 		{
+			sprintf(outBuf, "%s", recBuf);
+			//memset(outBuf, &recBuf, sizeof(recBuf));
 
+			ESP_RxLen = 0;
+			ESP_RecvEndFlag = 0;
+			memset(ESP_RxBUF, 0, ESP_MAX_RECVLEN);
+
+			for(i = 0; i < 500; i++)
+			{
+				buf[i] = 0;
+			}
+
+			return 1;
 		}
-
-		ESP_RxLen = 0;
-		ESP_RecvEndFlag = 0;
-		memset(ESP_RxBUF, 0, ESP_MAX_RECVLEN);
-
-		return 1;
 	}
 
 	return 0;
